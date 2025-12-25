@@ -1,16 +1,25 @@
 
 class SoundService {
   private ctx: AudioContext | null = null;
-  private isMuted: boolean = false;
-  private userMusicSource: AudioBufferSourceNode | null = null;
-  private musicGainNode: GainNode | null = null;
-  private effectVolume: number = 0.5;
-  private musicVolume: number = 0.5;
+  private bgMusicSource: AudioBufferSourceNode | null = null;
+  private bgMusicGain: GainNode | null = null;
+  private effectGain: GainNode | null = null;
+  private masterVolume: number = 0.5;
+  private musicVolume: number = 0.4;
+  private effectVolume: number = 0.7;
+  
+  private customBgMusicBuffer: AudioBuffer | null = null;
+  private customWinSoundBuffer: AudioBuffer | null = null;
 
   public initContext() {
     if (!this.ctx) {
       const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
       this.ctx = new AudioContextClass();
+      this.bgMusicGain = this.ctx.createGain();
+      this.effectGain = this.ctx.createGain();
+      this.bgMusicGain.connect(this.ctx.destination);
+      this.effectGain.connect(this.ctx.destination);
+      this.updateGains();
     }
     if (this.ctx && this.ctx.state === 'suspended') {
       this.ctx.resume();
@@ -18,106 +27,116 @@ class SoundService {
     return this.ctx;
   }
 
-  setMute(muted: boolean) {
-    this.isMuted = muted;
-    if (this.ctx) {
-      if (muted) this.ctx.suspend();
-      else this.ctx.resume();
+  private updateGains() {
+    if (this.bgMusicGain) this.bgMusicGain.gain.setTargetAtTime(this.musicVolume * this.masterVolume, this.ctx!.currentTime, 0.1);
+    if (this.effectGain) this.effectGain.gain.setTargetAtTime(this.effectVolume * this.masterVolume, this.ctx!.currentTime, 0.1);
+  }
+
+  public setVolumes(master: number, music: number) {
+    this.masterVolume = master;
+    this.musicVolume = music;
+    if (this.ctx) this.updateGains();
+  }
+
+  public async loadCustomSound(url: string, type: 'bg' | 'win') {
+    const ctx = this.initContext();
+    try {
+      const response = await fetch(url);
+      const arrayBuffer = await response.arrayBuffer();
+      const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+      if (type === 'bg') this.customBgMusicBuffer = audioBuffer;
+      else this.customWinSoundBuffer = audioBuffer;
+    } catch (e) {
+      console.error("Lỗi tải âm thanh:", e);
     }
   }
 
-  setVolumes(music: number, effect: number) {
-    this.musicVolume = music;
-    this.effectVolume = effect;
-    if (this.musicGainNode && this.ctx) {
-      this.musicGainNode.gain.setTargetAtTime(music, this.ctx.currentTime, 0.1);
+  async playBackgroundMusic() {
+    const ctx = this.initContext();
+    if (!ctx) return;
+    
+    if (this.bgMusicSource) {
+      this.bgMusicSource.stop();
+      this.bgMusicSource = null;
     }
+
+    const source = ctx.createBufferSource();
+    if (this.customBgMusicBuffer) {
+      source.buffer = this.customBgMusicBuffer;
+    } else {
+      // Nhạc nền mặc định vui nhộn từ pixabay nếu chưa có custom
+      try {
+        const res = await fetch('https://cdn.pixabay.com/audio/2022/01/18/audio_d0a13f69d2.mp3');
+        const ab = await res.arrayBuffer();
+        const buffer = await ctx.decodeAudioData(ab);
+        source.buffer = buffer;
+      } catch { return; }
+    }
+    
+    source.loop = true;
+    source.connect(this.bgMusicGain!);
+    source.start(0);
+    this.bgMusicSource = source;
   }
 
   playGallop() {
-    if (this.isMuted || this.effectVolume <= 0) return;
     const ctx = this.initContext();
     if (!ctx) return;
-    
     const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(80, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.1);
-    
-    gain.gain.setValueAtTime(0.05 * this.effectVolume, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
-    
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    
+    const g = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(200, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.05);
+    g.gain.setValueAtTime(0.08, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+    osc.connect(g);
+    g.connect(this.effectGain!);
     osc.start();
-    osc.stop(ctx.currentTime + 0.1);
+    osc.stop(ctx.currentTime + 0.05);
   }
 
-  async playUserMusic(base64Data: string, duration: number = 8) {
-    if (this.isMuted || !base64Data) return;
+  async playWin() {
     const ctx = this.initContext();
     if (!ctx) return;
+    
+    if (this.customWinSoundBuffer) {
+      const source = ctx.createBufferSource();
+      source.buffer = this.customWinSoundBuffer;
+      source.connect(this.effectGain!);
+      source.start(0);
+    } else {
+      // Synthesized Fanfare hoành tráng hơn
+      const now = ctx.currentTime;
+      const notes = [440, 554.37, 659.25, 880]; // A4, C#5, E5, A5
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(freq, now + i * 0.15);
+        g.gain.setValueAtTime(0.2, now + i * 0.15);
+        g.gain.exponentialRampToValueAtTime(0.01, now + i * 0.15 + 0.8);
+        osc.connect(g);
+        g.connect(this.effectGain!);
+        osc.start(now + i * 0.15);
+        osc.stop(now + i * 0.15 + 1);
+      });
 
-    try {
-      this.stopUserMusic();
-
-      const response = await fetch(base64Data);
-      const arrayBuffer = await response.arrayBuffer();
-      const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-      
-      this.userMusicSource = ctx.createBufferSource();
-      this.userMusicSource.buffer = audioBuffer;
-      this.userMusicSource.loop = true; // Loop để phát được lâu hơn nếu file ngắn
-
-      this.musicGainNode = ctx.createGain();
-      this.musicGainNode.gain.setValueAtTime(0, ctx.currentTime);
-      this.musicGainNode.gain.linearRampToValueAtTime(this.musicVolume, ctx.currentTime + 0.5); // Fade in
-      
-      // Mờ dần ở cuối (Fade out)
-      if (duration > 1) {
-        this.musicGainNode.gain.setTargetAtTime(0, ctx.currentTime + duration - 0.8, 0.3);
+      // Tiếng vỗ tay giả lập (White noise)
+      const bufferSize = ctx.sampleRate * 2;
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
       }
-
-      this.userMusicSource.connect(this.musicGainNode);
-      this.musicGainNode.connect(ctx.destination);
-      
-      this.userMusicSource.start(0);
-      this.userMusicSource.stop(ctx.currentTime + duration);
-    } catch (e) {
-      console.error("Lỗi âm thanh nhạc người dùng:", e);
+      const noise = ctx.createBufferSource();
+      noise.buffer = buffer;
+      const noiseGain = ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.1, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 2);
+      noise.connect(noiseGain);
+      noiseGain.connect(this.effectGain!);
+      noise.start(now);
     }
-  }
-
-  stopUserMusic() {
-    if (this.userMusicSource) {
-      try {
-        this.userMusicSource.stop();
-      } catch (e) {}
-      this.userMusicSource = null;
-    }
-  }
-
-  playWin() {
-    if (this.isMuted || this.effectVolume <= 0) return;
-    const ctx = this.initContext();
-    if (!ctx) return;
-
-    const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51];
-    notes.forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.12);
-      gain.gain.setValueAtTime(0.15 * this.effectVolume, ctx.currentTime + i * 0.12);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.12 + 0.6);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(ctx.currentTime + i * 0.12);
-      osc.stop(ctx.currentTime + i * 0.12 + 0.8);
-    });
   }
 }
 

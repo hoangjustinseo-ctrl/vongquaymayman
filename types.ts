@@ -6,27 +6,17 @@ export interface Prize {
   name: string;
   image: string;
   color: string;
-  type: 'food' | 'tech' | 'money';
-  description: string;
-  // Added optional fields for compatibility with Horse3D component and other racing logic
-  rank?: number;
-  amount?: string;
+  count: number;
 }
 
-export interface Participant {
-  id: string;
-  name: string;
-  color: string;
-  avatar: string;
-  // Added position for components that track movement/progress
-  position?: number;
+export interface WheelPrize extends Prize {
+  wheelId: string;
 }
 
-// Define Horse interface for components using horse racing logic
-export interface Horse {
-  id: number;
-  position: number;
-  rank?: number;
-  finished: boolean;
-  isBoosting: boolean;
+export interface AppSettings {
+  wallpaper: string;
+  masterVol: number;
+  musicVol: number;
+  bgMusicUrl: string;
+  winSoundUrl: string;
 }

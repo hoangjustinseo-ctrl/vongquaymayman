@@ -1,65 +1,11 @@
 
 import { Prize } from './types';
 
-export const PRIZE_CONFIG = [
-  { 
-    name: '10 Chai Nước Tăng Lực', 
-    image: 'https://cdn-icons-png.flaticon.com/512/3041/3041130.png', 
-    color: '#f59e0b', 
-    type: 'food' as const,
-    description: 'Năng lượng bùng nổ, quẩy xuyên màn đêm!',
-    count: 10
-  },
-  { 
-    name: '5 Thùng Mì Tôm', 
-    image: 'https://cdn-icons-png.flaticon.com/512/3448/3448099.png', 
-    color: '#ef4444', 
-    type: 'food' as const,
-    description: 'Cứu tinh cho những đêm cày game đói bụng!',
-    count: 5
-  },
-  { 
-    name: '5 Thùng Bia 333', 
-    image: 'https://cdn-icons-png.flaticon.com/512/931/931949.png', 
-    color: '#ef4444', 
-    type: 'food' as const,
-    description: 'Đậm đà hương vị Việt, cuộc vui thêm trọn vẹn!',
-    count: 5
-  },
-  { 
-    name: '5 Chai Nước Mắm', 
-    image: 'https://cdn-icons-png.flaticon.com/512/3295/3295777.png', 
-    color: '#8b5cf6', 
-    type: 'food' as const,
-    description: 'Gia vị quốc hồn quốc túy cho bữa cơm gia đình!',
-    count: 5
-  },
-];
-
-// Added PRIZES to satisfy Horse3D component requirements
 export const PRIZES: Prize[] = [
-  { id: 'p1', name: 'Nhất', image: '', color: '#fbbf24', type: 'money', description: 'Giải nhất', rank: 1, amount: '1M' },
-  { id: 'p2', name: 'Nhì', image: '', color: '#cbd5e1', type: 'money', description: 'Giải nhì', rank: 2, amount: '500K' },
-  { id: 'p3', name: 'Ba', image: '', color: '#b45309', type: 'money', description: 'Giải ba', rank: 3, amount: '200K' },
-];
-
-export const generateInitialPrizes = (): Prize[] => {
-  const prizes: Prize[] = [];
-  PRIZE_CONFIG.forEach((config, idx) => {
-    for (let i = 0; i < config.count; i++) {
-      prizes.push({
-        id: `prize-${idx}-${i}`,
-        name: config.name,
-        image: config.image,
-        color: config.color,
-        type: config.type,
-        description: config.description
-      });
-    }
-  });
-  return prizes.sort(() => Math.random() - 0.5);
-};
-
-export const COLORS = [
-  '#f59e0b', '#3b82f6', '#ef4444', '#ec4899', '#8b5cf6', '#10b981'
+  { id: '1', name: '10 CHAI NƯỚC TĂNG LỰC', color: '#f59e0b', image: 'https://img.freepik.com/premium-photo/energy-drink-can-with-splashes-liquid_1025752-11100.jpg', count: 5 },
+  { id: '2', name: '3 THÙNG MÌ TÔM', color: '#ef4444', image: 'https://img.freepik.com/premium-photo/instant-noodles-with-vegetables-shrimp-bowl_1164101-3837.jpg', count: 3 },
+  { id: '3', name: '1 THÙNG BIA', color: '#3b82f6', image: 'https://img.freepik.com/free-photo/view-beer-cans-with-water-droplets_23-2150523091.jpg', count: 2 },
+  { id: '4', name: '5 CHAI NƯỚC NGỌT', color: '#10b981', image: 'https://img.freepik.com/free-photo/glasses-cola-with-ice-cubes_23-2148416666.jpg', count: 10 },
+  { id: '5', name: '2 THÙNG SỮA', color: '#8b5cf6', image: 'https://img.freepik.com/premium-photo/glass-milk-with-milk-splashes-table_1267323-203.jpg', count: 4 },
+  { id: '6', name: '10 VỈ TRỨNG GÀ', color: '#ec4899', image: 'https://img.freepik.com/free-photo/fresh-eggs-bowl_23-2148114526.jpg', count: 6 }
 ];

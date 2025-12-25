@@ -2,6 +2,7 @@
 import { GoogleGenAI } from "@google/genai";
 
 export const getRaceCommentary = async (prizeName: string, remainingPrizes: string[], winnerName: string = "bạn") => {
+  // Fix: Always create a new GoogleGenAI instance right before making an API call
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   try {
     const response = await ai.models.generateContent({
@@ -12,8 +13,11 @@ export const getRaceCommentary = async (prizeName: string, remainingPrizes: stri
       config: {
         temperature: 0.9,
         maxOutputTokens: 200,
+        // Fix: Added thinkingBudget to prevent empty responses when maxOutputTokens is set
+        thinkingConfig: { thinkingBudget: 100 }
       }
     });
+    // Fix: Access .text property directly (do not call as a function)
     return response.text;
   } catch (error) {
     console.error("Gemini Error:", error);
