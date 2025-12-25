@@ -9,3 +9,7 @@ export const PRIZES: Prize[] = [
   { id: '5', name: '2 THÙNG SỮA', color: '#8b5cf6', image: 'https://img.freepik.com/premium-photo/glass-milk-with-milk-splashes-table_1267323-203.jpg', count: 4 },
   { id: '6', name: '10 VỈ TRỨNG GÀ', color: '#ec4899', image: 'https://img.freepik.com/free-photo/fresh-eggs-bowl_23-2148114526.jpg', count: 6 }
 ];
+
+// Link raw trực tiếp từ GitHub của bạn
+export const DEFAULT_BG_MUSIC = 'https://raw.githubusercontent.com/hoangjustinseo-ctrl/vongquaymayman/main/nhac-xo-so.mp3';
+export const DEFAULT_WIN_SOUND = 'https://cdn.pixabay.com/audio/2021/08/04/audio_12b0c7443c.mp3';
