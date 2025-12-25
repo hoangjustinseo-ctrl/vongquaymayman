@@ -1,22 +1,32 @@
 
 export type SpinStatus = 'idle' | 'spinning' | 'finished';
+export type Gender = 'male' | 'female' | 'other';
 
 export interface Prize {
   id: string;
   name: string;
-  image: string;
-  color: string;
   count: number;
+  color: string;
+  image: string;
 }
 
-export interface WheelPrize extends Prize {
-  wheelId: string;
+export interface WheelPrize {
+  name: string;
+  color: string;
+  image: string;
 }
 
-export interface AppSettings {
-  wallpaper: string;
-  masterVol: number;
-  musicVol: number;
-  bgMusicUrl: string;
-  winSoundUrl: string;
+export interface WinnerRecord {
+  userName: string;
+  gender: Gender;
+  userPhoto: string;
+  prizeName: string;
+  time: string;
+}
+
+export interface Horse {
+  id: string;
+  name: string;
+  progress: number;
+  image: string;
 }
