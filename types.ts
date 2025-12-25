@@ -1,5 +1,5 @@
 
-export type RaceStatus = 'idle' | 'spinning' | 'finished';
+export type SpinStatus = 'idle' | 'spinning' | 'finished';
 
 export interface Prize {
   id: string;

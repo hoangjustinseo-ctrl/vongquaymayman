@@ -1,2 +1,1 @@
-
-export default function RaceTrack() { return null; }
+// File deleted
