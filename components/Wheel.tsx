@@ -17,7 +17,10 @@ const Wheel: React.FC<WheelProps> = ({ prizes, rotation }) => {
       if (!loadedImages[p.image] && p.image) {
         const img = new Image();
         img.src = p.image;
-        img.crossOrigin = "anonymous";
+        // KHÔNG dùng crossOrigin cho data URLs hoặc Blob URLs
+        if (!p.image.startsWith('data:') && !p.image.startsWith('blob:')) {
+          img.crossOrigin = "anonymous";
+        }
         img.onload = () => setLoadedImages(prev => ({ ...prev, [p.image]: img }));
         img.onerror = () => console.warn("Lỗi load ảnh quà:", p.name);
       }
@@ -68,7 +71,6 @@ const Wheel: React.FC<WheelProps> = ({ prizes, rotation }) => {
         ctx.save();
         ctx.rotate(angle + sliceAngle / 2);
         
-        // Text configuration
         ctx.textAlign = 'right';
         ctx.fillStyle = 'white';
         ctx.shadowBlur = 8;
@@ -77,7 +79,6 @@ const Wheel: React.FC<WheelProps> = ({ prizes, rotation }) => {
         ctx.font = `900 ${fontSize}px "Inter", sans-serif`;
         ctx.fillText(p.name.toUpperCase(), radius - 60, fontSize / 3);
 
-        // Image configuration
         const img = loadedImages[p.image];
         if (img) {
           const imgSize = radius * 0.24;
@@ -90,21 +91,18 @@ const Wheel: React.FC<WheelProps> = ({ prizes, rotation }) => {
 
       ctx.restore();
 
-      // Golden outer ring
       ctx.beginPath();
       ctx.arc(center, center, radius, 0, Math.PI * 2);
       ctx.strokeStyle = '#fbbf24';
       ctx.lineWidth = 12;
       ctx.stroke();
 
-      // Shadow inner ring
       ctx.beginPath();
       ctx.arc(center, center, radius, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba(0,0,0,0.2)';
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Inner Center Circle
       ctx.beginPath();
       ctx.arc(center, center, 50, 0, Math.PI * 2);
       ctx.fillStyle = 'white';
@@ -112,7 +110,6 @@ const Wheel: React.FC<WheelProps> = ({ prizes, rotation }) => {
       ctx.shadowColor = 'rgba(0,0,0,0.4)';
       ctx.fill();
       
-      // Pointer - Red Triangle at Top Fixed
       ctx.fillStyle = '#ef4444';
       ctx.beginPath();
       ctx.moveTo(center - 25, 0);

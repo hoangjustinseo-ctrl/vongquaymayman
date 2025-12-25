@@ -7,32 +7,37 @@ export const getRaceCommentary = async (
   winnerName: string = "bạn", 
   gender: Gender = 'other'
 ) => {
-  // Truy cập an toàn để tránh lỗi ReferenceError: process is not defined
   const env = (globalThis as any).process?.env || {};
   const apiKey = env.API_KEY;
 
+  const pronoun = gender === 'male' ? 'anh' : gender === 'female' ? 'chị' : 'bạn';
+
   if (!apiKey) {
-    return `Chúc mừng ${gender === 'male' ? 'anh' : gender === 'female' ? 'chị' : 'bạn'} ${winnerName} đã giành được ${prizeName}!`;
+    return `Chúc mừng ${pronoun} ${winnerName} đã cực kỳ may mắn nhận được món quà tuyệt vời: ${prizeName}!`;
   }
 
   const ai = new GoogleGenAI({ apiKey });
-  
-  const pronoun = gender === 'male' ? 'anh' : gender === 'female' ? 'chị' : 'bạn';
 
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Bạn là bình luận viên đua ngựa hài hước. Người chơi tên "${winnerName}" (xưng hô là ${pronoun}) vừa thắng giải "${prizeName}". Hãy viết 1 câu chúc mừng kịch tính, vui vẻ và gọi đúng xưng hô ${pronoun}.`,
+      contents: `Bạn là MC chuyên nghiệp. 
+      Người chơi "${winnerName}" (${pronoun}) vừa trúng "${prizeName}".
+      
+      YÊU CẦU:
+      1. Viết 1 câu chúc mừng hào hứng, ngắn gọn (dưới 20 từ).
+      2. Tập trung vào món quà "${prizeName}" và sự may mắn.
+      3. Tuyệt đối KHÔNG nhắc đến: ngựa, đua, chạy, đường đua, phi...
+      4. Ngôn ngữ thân thiện, vui vẻ.`,
       config: {
         temperature: 0.9,
-        maxOutputTokens: 100,
+        maxOutputTokens: 50,
         thinkingConfig: { thinkingBudget: 0 }
       }
     });
 
-    return response.text?.trim() || `Chúc mừng ${pronoun} ${winnerName} đã giành chiến thắng rực rỡ!`;
+    return response.text?.trim() || `Chúc mừng ${pronoun} ${winnerName}! Món quà "${prizeName}" thật tuyệt vời!`;
   } catch (error) {
-    console.error("Gemini API Error:", error);
-    return `Xin chúc mừng ${pronoun} ${winnerName}! Một phần quà tuyệt vời dành cho người xứng đáng.`;
+    return `Chúc mừng ${pronoun} ${winnerName}! Bạn thật sự rất may mắn khi nhận được "${prizeName}"!`;
   }
 };

@@ -1,9 +1,8 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Prize, SpinStatus, WinnerRecord, WheelPrize, Gender, Horse } from './types';
-import { INITIAL_PRIZES, HORSE_ICON, DEFAULT_BG_MUSIC, DEFAULT_WIN_SOUND } from './constants';
+import { Prize, SpinStatus, WinnerRecord, WheelPrize, Gender } from './types';
+import { INITIAL_PRIZES, HORSE_ICON, DEFAULT_BG_MUSIC, DEFAULT_WIN_SOUND, BG_PRESETS, MUSIC_PLAYLIST, WIN_SOUNDS } from './constants';
 import Wheel from './components/Wheel';
-import RaceTrack from './components/RaceTrack';
 import { getRaceCommentary } from './services/geminiService';
 import { soundService } from './services/soundService';
 
@@ -14,10 +13,8 @@ const App: React.FC = () => {
   const [userName, setUserName] = useState('');
   const [gender, setGender] = useState<Gender>('male');
   const [userPhoto, setUserPhoto] = useState<string>(HORSE_ICON);
+  const [prizeZoom, setPrizeZoom] = useState<number>(1); // 1: bình thường, 1.5: to
   
-  // Horses for the "Race" feel
-  const [horses, setHorses] = useState<Horse[]>([]);
-
   const [prizes, setPrizes] = useState<Prize[]>(() => {
     try {
       const params = new URLSearchParams(window.location.search);
@@ -26,9 +23,7 @@ const App: React.FC = () => {
         const decoded = JSON.parse(atob(data));
         if (Array.isArray(decoded) && decoded.length > 0) return decoded;
       }
-    } catch (e) {
-      console.warn("Lỗi giải mã URL data:", e);
-    }
+    } catch (e) {}
     return INITIAL_PRIZES;
   });
 
@@ -38,12 +33,14 @@ const App: React.FC = () => {
   const [commentary, setCommentary] = useState('');
   
   const [bgMusicUrl, setBgMusicUrl] = useState(DEFAULT_BG_MUSIC);
+  const [winSoundUrl, setWinSoundUrl] = useState(DEFAULT_WIN_SOUND);
   const [masterVol, setMasterVol] = useState(70);
   const [musicVol, setMusicVol] = useState(50);
-  const [bgImageUrl, setBgImageUrl] = useState('https://images.unsplash.com/photo-1557683316-973673baf926?auto=format&fit=crop&w=1920&q=80');
+  const [bgImageUrl, setBgImageUrl] = useState(BG_PRESETS[0].url);
 
   const rotationRef = useRef(0);
   const lastTickAngle = useRef(0);
+  const confettiRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     try {
@@ -54,31 +51,39 @@ const App: React.FC = () => {
     } catch (e) {}
   }, [prizes]);
 
+  useEffect(() => {
+    soundService.setVolumes(masterVol / 100, musicVol / 100);
+  }, [masterVol, musicVol]);
+
   const availablePrizes = useMemo(() => prizes.filter(p => p.count > 0), [prizes]);
   const wheelPrizes: WheelPrize[] = useMemo(() => 
     availablePrizes.map(p => ({ name: p.name, color: p.color, image: p.image })),
     [availablePrizes]
   );
 
-  useEffect(() => {
-    soundService.setVolumes(masterVol / 100, musicVol / 100);
-  }, [masterVol, musicVol]);
-
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = (setter: (url: string) => void, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = (event) => {
-        if (event.target?.result) setUserPhoto(event.target.result as string);
+        if (event.target?.result) setter(event.target.result as string);
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handleAudioUpload = (setter: (url: string) => void, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setter(url);
     }
   };
 
   const startSpin = () => {
     if (status === 'spinning' || availablePrizes.length === 0) return;
     if (!userName.trim()) {
-      alert("Vui lòng nhập tên của bạn!");
+      alert("Hãy nhập tên của bạn trước khi quay nhé!");
       return;
     }
     
@@ -87,33 +92,20 @@ const App: React.FC = () => {
     setStatus('spinning');
     setShowPopup(false);
     
-    // Initialize horses for the race track
-    setHorses([
-      { id: 'player', name: userName, progress: 0, image: userPhoto },
-      { id: 'comp1', name: 'Đối thủ 1', progress: 0, image: HORSE_ICON },
-      { id: 'comp2', name: 'Đối thủ 2', progress: 0, image: HORSE_ICON }
-    ]);
-
-    const extraSpins = 12 + Math.random() * 5;
+    const extraSpins = 10 + Math.random() * 5;
     const finalRotation = rotationRef.current + (extraSpins * 360) + Math.random() * 360;
-    const duration = 10000;
+    const duration = 7500;
     const startTime = performance.now();
     const startRotation = rotationRef.current;
 
     const animate = (now: number) => {
       const elapsed = now - startTime;
       const progress = Math.min(elapsed / duration, 1);
-      const ease = 1 - Math.pow(1 - progress, 5);
+      const ease = 1 - Math.pow(1 - progress, 4);
       const currentRotation = startRotation + (finalRotation - startRotation) * ease;
       
       rotationRef.current = currentRotation;
       setRotation(currentRotation);
-
-      // Update horses progress based on spin progress
-      setHorses(prev => prev.map(h => ({
-        ...h,
-        progress: h.id === 'player' ? progress * 95 : Math.min(95, h.progress + Math.random() * 1.5)
-      })));
 
       const sliceSize = 360 / (availablePrizes.length || 1);
       if (Math.floor(currentRotation / sliceSize) > Math.floor(lastTickAngle.current / sliceSize)) {
@@ -129,104 +121,135 @@ const App: React.FC = () => {
 
   const finishSpin = (finalRotation: number) => {
     setStatus('finished');
-    soundService.playWin(DEFAULT_WIN_SOUND);
+    soundService.playWin(winSoundUrl);
     
-    // Horse reaches finish line
-    setHorses(prev => prev.map(h => h.id === 'player' ? { ...h, progress: 100 } : h));
-
     const normalizedRotation = (finalRotation % 360 + 360) % 360;
     const pointerAngle = (270 - normalizedRotation + 360) % 360;
-    const winIndex = Math.floor(pointerAngle / (360 / availablePrizes.length));
+    const winIndex = Math.floor(pointerAngle / (360 / (availablePrizes.length || 1)));
     const winPrize = availablePrizes[winIndex];
 
     const winRecord: WinnerRecord = { 
-      userName, 
-      gender,
-      userPhoto,
+      userName, gender, userPhoto,
       prizeName: winPrize.name, 
       time: new Date().toLocaleTimeString() 
     };
 
     setCurrentWin(winRecord);
     setWinners(prev => [winRecord, ...prev]);
-    setTimeout(() => setShowPopup(true), 500);
+    setTimeout(() => {
+      setShowPopup(true);
+      startConfetti();
+    }, 400);
     handleAICommentary(userName, winPrize.name, gender);
 
     setPrizes(prev => prev.map(p => p.id === winPrize.id ? { ...p, count: p.count - 1 } : p));
   };
 
   const handleAICommentary = async (user: string, prize: string, g: Gender) => {
-    setCommentary('Bình luận viên đang soạn thảo...');
+    setCommentary('Đang nhận lời chúc may mắn...');
     const res = await getRaceCommentary(prize, user, g);
     setCommentary(res);
   };
 
+  const startConfetti = () => {
+    const canvas = confettiRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const pieces: any[] = [];
+    const colors = ['#facc15', '#fbbf24', '#ffffff', '#ef4444', '#3b82f6'];
+    for (let i = 0; i < 150; i++) {
+      pieces.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height - canvas.height,
+        r: Math.random() * 6 + 4,
+        d: Math.random() * 150,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        tilt: Math.random() * 10 - 10,
+        tiltAngleIncremental: Math.random() * 0.07 + 0.05,
+        tiltAngle: 0
+      });
+    }
+    let animationFrame: number;
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      pieces.forEach(p => {
+        p.tiltAngle += p.tiltAngleIncremental;
+        p.y += (Math.cos(p.d) + 3 + p.r / 2) / 2;
+        p.x += Math.sin(p.d);
+        p.tilt = Math.sin(p.tiltAngle) * 15;
+        ctx.beginPath();
+        ctx.lineWidth = p.r;
+        ctx.strokeStyle = p.color;
+        ctx.moveTo(p.x + p.tilt + p.r / 2, p.y);
+        ctx.lineTo(p.x + p.tilt, p.y + p.tilt + p.r / 2);
+        ctx.stroke();
+      });
+      if (pieces.some(p => p.y < canvas.height)) animationFrame = requestAnimationFrame(draw);
+    };
+    draw();
+    setTimeout(() => cancelAnimationFrame(animationFrame), 8000);
+  };
+
   return (
     <div className="relative min-h-screen bg-[#020617] text-white font-sans overflow-x-hidden">
-      <div className="fixed inset-0 bg-cover bg-center transition-all duration-1000" style={{ backgroundImage: `url(${bgImageUrl})` }}>
-        <div className="absolute inset-0 bg-[#020617]/90 backdrop-blur-[4px]"></div>
-      </div>
+      {/* SỬA HIỂN THỊ HÌNH NỀN: Overlay mờ hơn để ảnh hiện rõ */}
+      <div 
+        className="fixed inset-0 bg-cover bg-center transition-opacity duration-1000 z-0" 
+        style={{ backgroundImage: `url(${bgImageUrl})` }}
+      />
+      <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-[1px] z-[1]"></div>
 
       <div className="relative z-10 flex flex-col min-h-screen">
-        <header className="px-10 py-5 flex justify-between items-center bg-[#0f172a]/80 border-b border-white/5 backdrop-blur-xl sticky top-0">
-          <div className="flex items-center gap-5">
-            <div className="w-14 h-14 bg-yellow-400 rounded-2xl flex items-center justify-center shadow-[0_0_40px_rgba(251,191,36,0.3)] transform hover:rotate-6 transition-transform">
-              <i className="fas fa-horse text-3xl text-slate-900"></i>
+        <header className="px-8 py-4 flex justify-between items-center bg-slate-900/60 border-b border-white/10 backdrop-blur-xl sticky top-0 shadow-2xl">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 bg-yellow-400 rounded-lg flex items-center justify-center shadow-lg">
+              <i className="fas fa-gift text-xl text-slate-900"></i>
             </div>
-            <div>
-              <h1 className="text-3xl font-black uppercase italic tracking-tighter text-white leading-none">
-                CUỘC ĐUA <span className="text-yellow-400">MAY MẮN</span>
-              </h1>
-              <p className="text-[11px] font-bold text-white/40 uppercase tracking-[0.5em] mt-1">KHÔNG CHỈ LÀ VÒNG QUAY</p>
-            </div>
+            <h1 className="text-xl font-black uppercase italic tracking-tighter text-white">VÒNG QUAY <span className="text-yellow-400">MAY MẮN</span></h1>
           </div>
-          <div className="flex gap-4">
-            <button onClick={() => setActiveTab('game')} className={`px-8 py-3 rounded-xl font-black text-[12px] uppercase tracking-widest transition-all ${activeTab === 'game' ? 'bg-white text-slate-950 shadow-2xl' : 'bg-white/5 hover:bg-white/10'}`}>TRÒ CHƠI</button>
-            <button onClick={() => setActiveTab('settings')} className={`px-8 py-3 rounded-xl font-black text-[12px] uppercase tracking-widest transition-all ${activeTab === 'settings' ? 'bg-yellow-400 text-slate-950 shadow-2xl' : 'bg-white/5 hover:bg-white/10'}`}>CÀI ĐẶT</button>
+          <div className="flex gap-2">
+            <button onClick={() => setActiveTab('game')} className={`px-5 py-2 rounded-lg font-bold text-[10px] uppercase tracking-widest transition-all ${activeTab === 'game' ? 'bg-white text-slate-950' : 'bg-white/5 hover:bg-white/10'}`}>CHƠI GAME</button>
+            <button onClick={() => setActiveTab('settings')} className={`px-5 py-2 rounded-lg font-bold text-[10px] uppercase tracking-widest transition-all ${activeTab === 'settings' ? 'bg-yellow-400 text-slate-950' : 'bg-white/5 hover:bg-white/10'}`}>CÀI ĐẶT</button>
           </div>
         </header>
 
         {activeTab === 'game' ? (
-          <main className="flex-1 p-6 lg:p-10 flex flex-col gap-10 max-w-[1600px] mx-auto w-full">
-            {/* Race Track Section */}
-            {horses.length > 0 && (
-              <div className="w-full animate-in slide-in-from-top duration-700">
-                <RaceTrack horses={horses} />
-              </div>
-            )}
-
-            <div className="flex flex-col lg:flex-row items-start justify-center gap-12">
+          <main className="flex-1 p-6 lg:p-8 flex flex-col items-center justify-center max-w-[1400px] mx-auto w-full gap-8">
+            <div className="flex flex-col lg:flex-row items-center justify-center gap-16 w-full animate-in fade-in duration-500">
+              
               <div className="flex-1 flex flex-col items-center">
-                <div className="w-full max-w-[550px] aspect-square relative drop-shadow-[0_0_100px_rgba(251,191,36,0.1)]">
+                <div className="w-full max-w-[550px] aspect-square relative drop-shadow-[0_0_60px_rgba(251,191,36,0.1)]">
                   <Wheel prizes={wheelPrizes} rotation={rotation} />
                 </div>
+              </div>
 
-                <div className="mt-12 w-full max-w-lg bg-white/5 p-8 rounded-[50px] border border-white/10 backdrop-blur-3xl shadow-2xl">
-                  <div className="flex flex-col md:flex-row gap-6 items-center mb-6">
+              <div className="w-full lg:w-[420px] flex flex-col gap-6">
+                <div className="bg-white/10 p-8 rounded-[40px] border border-white/10 backdrop-blur-3xl shadow-2xl">
+                  <div className="flex flex-col gap-6 items-center mb-6">
                       <div className="relative group">
-                        <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-white/10 shadow-2xl bg-slate-800">
+                        <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-yellow-400 shadow-xl bg-slate-800">
                             <img src={userPhoto} className="w-full h-full object-cover" alt="User" />
                         </div>
                         <label className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 rounded-full cursor-pointer transition-all">
-                            <i className="fas fa-camera text-white text-xs"></i>
-                            <input type="file" className="hidden" accept="image/*" onChange={handlePhotoUpload} />
+                            <i className="fas fa-camera text-white text-base"></i>
+                            <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(setUserPhoto, e)} />
                         </label>
                       </div>
 
-                      <div className="flex-1 w-full space-y-4">
+                      <div className="w-full space-y-3">
                         <input 
-                          type="text" 
-                          value={userName}
-                          onChange={(e) => setUserName(e.target.value)}
-                          placeholder="NHẬP TÊN CỦA BẠN..."
-                          className="w-full bg-white/5 border border-white/10 rounded-[20px] px-6 py-4 text-sm font-black focus:outline-none focus:border-yellow-400 transition-all text-center placeholder:text-white/20 uppercase tracking-[0.2em]"
+                          type="text" value={userName} onChange={(e) => setUserName(e.target.value)}
+                          placeholder="TÊN BẠN"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-5 py-3.5 text-center font-black focus:outline-none focus:border-yellow-400 uppercase tracking-widest text-xs"
                         />
                         <div className="flex justify-center gap-2">
                             {(['male', 'female', 'other'] as Gender[]).map((g) => (
                               <button 
-                                key={g}
-                                onClick={() => setGender(g)}
-                                className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all border ${gender === g ? 'bg-yellow-400 text-slate-950 border-yellow-400 shadow-lg' : 'bg-white/5 border-white/10 text-white/40 hover:text-white'}`}
+                                key={g} onClick={() => setGender(g)}
+                                className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase transition-all border ${gender === g ? 'bg-yellow-400 text-slate-950 border-yellow-400' : 'bg-white/5 border-white/10 text-white/30'}`}
                               >
                                 {g === 'male' ? 'ANH' : g === 'female' ? 'CHỊ' : 'BẠN'}
                               </button>
@@ -236,111 +259,145 @@ const App: React.FC = () => {
                   </div>
 
                   <button 
-                    onClick={startSpin}
-                    disabled={status === 'spinning' || availablePrizes.length === 0}
-                    className={`w-full py-6 rounded-[25px] font-black text-2xl uppercase tracking-tighter transition-all shadow-2xl ${status === 'spinning' ? 'bg-white/5 text-white/10 cursor-not-allowed' : 'bg-yellow-400 text-slate-950 hover:bg-yellow-300 active:scale-95'}`}
+                    onClick={startSpin} disabled={status === 'spinning' || availablePrizes.length === 0}
+                    className={`w-full py-5 rounded-2xl font-black text-xl uppercase tracking-tighter transition-all ${status === 'spinning' ? 'bg-white/5 text-white/10' : 'bg-yellow-400 text-slate-950 hover:bg-yellow-300 shadow-lg active:scale-95'}`}
                   >
-                    {status === 'spinning' ? 'ĐANG CHẠY...' : 'BẮT ĐẦU ĐUA'}
+                    {status === 'spinning' ? 'ĐANG QUAY...' : 'QUAY NGAY'}
                   </button>
                 </div>
-              </div>
 
-              <aside className="w-full lg:w-[400px] bg-[#0f172a]/70 border border-white/10 rounded-[50px] p-10 flex flex-col shadow-2xl backdrop-blur-3xl h-fit max-h-[700px]">
-                <h2 className="text-[12px] font-black text-yellow-400 uppercase tracking-[0.3em] mb-8 flex items-center gap-4">
-                  <i className="fas fa-gift text-lg"></i> KHO QUÀ
-                </h2>
-                <div className="flex-1 overflow-y-auto space-y-4 custom-scrollbar pr-2">
-                    {prizes.map((p) => (
-                      <div key={p.id} className={`flex items-center gap-4 p-4 rounded-[25px] border transition-all ${p.count > 0 ? 'bg-white/5 border-white/5' : 'bg-red-500/5 border-red-500/10 opacity-30'}`}>
-                        <div className="w-12 h-12 bg-[#1e293b] rounded-xl flex items-center justify-center p-2 shadow-xl">
-                            <img src={p.image} className="w-full h-full object-contain" />
+                {/* KHO GIẢI THƯỞNG CÓ PHÓNG TO THU NHỎ */}
+                <div className="bg-slate-900/80 border border-white/10 rounded-[40px] p-8 flex flex-col backdrop-blur-3xl h-[320px] shadow-2xl relative overflow-hidden">
+                  <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-[9px] font-black text-yellow-400 uppercase tracking-[0.3em] flex items-center gap-2">
+                      <i className="fas fa-boxes"></i> KHO GIẢI THƯỞNG
+                    </h2>
+                    <div className="flex items-center gap-2 bg-white/5 rounded-lg px-2 py-1">
+                       <button onClick={() => setPrizeZoom(1)} className={`w-6 h-6 rounded flex items-center justify-center text-[9px] ${prizeZoom === 1 ? 'bg-yellow-400 text-slate-900' : 'hover:bg-white/10'}`}><i className="fas fa-minus"></i></button>
+                       <button onClick={() => setPrizeZoom(1.5)} className={`w-6 h-6 rounded flex items-center justify-center text-[9px] ${prizeZoom === 1.5 ? 'bg-yellow-400 text-slate-900' : 'hover:bg-white/10'}`}><i className="fas fa-plus"></i></button>
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar pr-1">
+                      {prizes.map((p) => (
+                        <div key={p.id} className={`flex items-center gap-4 p-3 rounded-2xl border transition-all ${p.count > 0 ? 'bg-white/5 border-white/5' : 'bg-red-500/5 opacity-20'}`} style={{ transform: `scale(${prizeZoom === 1.5 ? 1.05 : 1})`, transformOrigin: 'left center' }}>
+                          <img src={p.image} className="object-contain" style={{ width: prizeZoom === 1.5 ? '40px' : '32px', height: prizeZoom === 1.5 ? '40px' : '32px' }} />
+                          <div className="flex-1 min-w-0">
+                              <p className={`font-black uppercase truncate ${prizeZoom === 1.5 ? 'text-sm' : 'text-[11px]'}`}>{p.name}</p>
+                              <p className={`font-bold text-yellow-400/60 uppercase ${prizeZoom === 1.5 ? 'text-[10px]' : 'text-[8px]'}`}>CÒN: {p.count}</p>
+                          </div>
+                          <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.color }}></div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                            <p className="text-[12px] font-black uppercase truncate tracking-tight">{p.name}</p>
-                            <p className="text-[10px] font-bold text-yellow-400/60 mt-1 uppercase">CÒN: {p.count}</p>
-                        </div>
-                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }}></div>
-                      </div>
-                    ))}
+                      ))}
+                  </div>
                 </div>
-              </aside>
+              </div>
             </div>
           </main>
         ) : (
-          <main className="flex-1 p-10 lg:p-16 max-w-7xl mx-auto w-full grid lg:grid-cols-2 gap-12">
-            {/* Settings content same as before but ensured to be stable */}
-             <div className="bg-[#0f172a]/70 p-12 rounded-[60px] border border-white/5 shadow-2xl backdrop-blur-3xl space-y-12 h-fit">
-               <h2 className="text-sm font-black text-yellow-400 uppercase tracking-[0.2em] pb-8 border-b border-white/5">HÌNH NỀN & ÂM THANH</h2>
-               <div className="space-y-10">
-                  <div className="space-y-4">
-                    <label className="text-[11px] font-black text-white/30 uppercase tracking-[0.2em]">URL HÌNH NỀN</label>
-                    <input type="text" value={bgImageUrl} onChange={(e) => setBgImageUrl(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-5 text-xs font-bold" />
+          <main className="flex-1 p-8 max-w-6xl mx-auto w-full grid lg:grid-cols-2 gap-8">
+             <div className="space-y-8">
+                <div className="bg-slate-900/80 p-8 rounded-[40px] border border-white/10 space-y-6 backdrop-blur-3xl">
+                  <div className="flex justify-between items-center">
+                    <h2 className="text-[10px] font-black text-yellow-400 uppercase tracking-widest">HÌNH NỀN SÂN KHẤU</h2>
+                    <label className="px-4 py-2 bg-white/10 hover:bg-white text-white hover:text-slate-900 rounded-lg text-[9px] font-bold uppercase cursor-pointer">
+                      TẢI ẢNH RIÊNG
+                      <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(setBgImageUrl, e)} />
+                    </label>
                   </div>
-                  <div className="space-y-4">
-                    <label className="text-[11px] font-black text-white/30 uppercase tracking-[0.2em]">ÂM LƯỢNG ({masterVol}%)</label>
-                    <input type="range" value={masterVol} onChange={(e) => setMasterVol(parseInt(e.target.value))} className="w-full accent-yellow-400 h-2 bg-white/5 rounded-full" />
+                  <div className="grid grid-cols-2 gap-3">
+                    {BG_PRESETS.map((bg) => (
+                      <button key={bg.name} onClick={() => setBgImageUrl(bg.url)} className={`group relative h-20 rounded-xl overflow-hidden border-2 transition-all ${bgImageUrl === bg.url ? 'border-yellow-400' : 'border-white/5'}`}>
+                        <img src={bg.url} className="w-full h-full object-cover opacity-60" />
+                        <span className="absolute inset-0 flex items-center justify-center text-[8px] font-black uppercase">{bg.name}</span>
+                      </button>
+                    ))}
                   </div>
-               </div>
-            </div>
-            <div className="bg-[#0f172a]/70 p-12 rounded-[60px] border border-white/5 shadow-2xl backdrop-blur-3xl flex flex-col h-[750px]">
-               <div className="flex justify-between items-center mb-10 pb-8 border-b border-white/5">
-                  <h2 className="text-sm font-black text-yellow-400 uppercase tracking-[0.2em]">QUÀ TẶNG</h2>
-                  <button onClick={() => setPrizes([...prizes, { id: Math.random().toString(36).substr(2, 9), name: 'QUÀ MỚI', count: 1, color: '#facc15', image: HORSE_ICON }])} className="px-6 py-3 bg-white text-slate-950 rounded-xl text-[10px] font-black uppercase shadow-2xl hover:bg-yellow-400">+ THÊM</button>
-               </div>
-               <div className="flex-1 overflow-y-auto space-y-4 custom-scrollbar pr-4">
+                </div>
+
+                <div className="bg-slate-900/80 p-8 rounded-[40px] border border-white/10 space-y-6 backdrop-blur-3xl">
+                  <h2 className="text-[10px] font-black text-yellow-400 uppercase tracking-widest">ÂM THANH</h2>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-[8px] font-bold text-white/40 uppercase"><span>NHẠC NỀN</span> <label className="cursor-pointer text-yellow-400">TẢI LÊN <input type="file" className="hidden" accept="audio/*" onChange={(e) => handleAudioUpload(setBgMusicUrl, e)} /></label></div>
+                      <select value={bgMusicUrl} onChange={(e) => setBgMusicUrl(e.target.value)} className="w-full bg-white/5 rounded-xl px-4 py-2 text-xs outline-none border border-white/5">{MUSIC_PLAYLIST.map(m => <option key={m.url} value={m.url} className="bg-slate-900">{m.name}</option>)}</select>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-[8px] font-bold text-white/40 uppercase"><span>HIỆU ỨNG THẮNG</span> <label className="cursor-pointer text-yellow-400">TẢI LÊN <input type="file" className="hidden" accept="audio/*" onChange={(e) => handleAudioUpload(setWinSoundUrl, e)} /></label></div>
+                      <select value={winSoundUrl} onChange={(e) => setWinSoundUrl(e.target.value)} className="w-full bg-white/5 rounded-xl px-4 py-2 text-xs outline-none border border-white/5">{WIN_SOUNDS.map(s => <option key={s.url} value={s.url} className="bg-slate-900">{s.name}</option>)}</select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 pt-2">
+                      <div className="space-y-1"><label className="text-[8px] font-bold text-white/40 uppercase">TỔNG ({masterVol}%)</label><input type="range" value={masterVol} onChange={(e) => setMasterVol(parseInt(e.target.value))} className="w-full accent-yellow-400" /></div>
+                      <div className="space-y-1"><label className="text-[8px] font-bold text-white/40 uppercase">NHẠC ({musicVol}%)</label><input type="range" value={musicVol} onChange={(e) => setMusicVol(parseInt(e.target.value))} className="w-full accent-blue-400" /></div>
+                    </div>
+                  </div>
+                </div>
+             </div>
+
+             <div className="bg-slate-900/80 p-8 rounded-[40px] border border-white/10 backdrop-blur-3xl flex flex-col h-full max-h-[700px]">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-[10px] font-black text-yellow-400 uppercase tracking-widest">GIẢI THƯỞNG</h2>
+                  <button onClick={() => setPrizes([...prizes, { id: Math.random().toString(36).substr(2, 9), name: 'QUÀ MỚI', count: 1, color: '#facc15', image: HORSE_ICON }])} className="px-4 py-2 bg-white text-slate-950 rounded-lg text-[9px] font-black uppercase transition-transform hover:scale-105">+ THÊM</button>
+                </div>
+                <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-2">
                   {prizes.map((p) => (
-                    <div key={p.id} className="bg-white/5 p-5 rounded-[30px] border border-white/5 flex items-center gap-4">
-                       <input 
-                         type="text" 
-                         value={p.name} 
-                         onChange={(e) => setPrizes(prev => prev.map(item => item.id === p.id ? {...item, name: e.target.value} : item))}
-                         className="flex-1 bg-transparent border-none text-[13px] font-black uppercase p-0"
-                       />
-                       <input type="number" value={p.count} onChange={(e) => setPrizes(prev => prev.map(item => item.id === p.id ? {...item, count: parseInt(e.target.value) || 0} : item))} className="w-16 bg-white/5 border-none rounded-lg text-center font-bold" />
-                       <input type="color" value={p.color} onChange={(e) => setPrizes(prev => prev.map(item => item.id === p.id ? {...item, color: e.target.value} : item))} className="w-8 h-8 rounded-full border-none p-0 cursor-pointer" />
-                       <button onClick={() => setPrizes(prizes.filter(pr => pr.id !== p.id))} className="text-red-500 hover:text-red-400"><i className="fas fa-trash"></i></button>
+                    <div key={p.id} className="bg-white/5 p-4 rounded-2xl flex items-center gap-4 group hover:bg-white/10 transition-all">
+                       <label className="w-10 h-10 bg-white/5 rounded-lg overflow-hidden flex items-center justify-center p-1 cursor-pointer hover:border-yellow-400/50 border border-transparent">
+                          <img src={p.image} className="max-w-full max-h-full object-contain" />
+                          <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload((url) => setPrizes(prev => prev.map(item => item.id === p.id ? {...item, image: url} : item)), e)} />
+                       </label>
+                       <input type="text" value={p.name} onChange={(e) => setPrizes(prev => prev.map(item => item.id === p.id ? {...item, name: e.target.value} : item))} className="flex-1 bg-transparent border-none text-xs font-bold uppercase outline-none focus:text-yellow-400" />
+                       <input type="number" value={p.count} onChange={(e) => setPrizes(prev => prev.map(item => item.id === p.id ? {...item, count: parseInt(e.target.value) || 0} : item))} className="w-10 bg-white/10 text-center font-bold py-1.5 rounded-lg text-[10px]" />
+                       <input type="color" value={p.color} onChange={(e) => setPrizes(prev => prev.map(item => item.id === p.id ? {...item, color: e.target.value} : item))} className="w-6 h-6 rounded-full border-none cursor-pointer p-0" />
+                       <button onClick={() => setPrizes(prizes.filter(pr => pr.id !== p.id))} className="text-red-500/20 group-hover:text-red-500 transition-colors"><i className="fas fa-trash"></i></button>
                     </div>
                   ))}
-               </div>
-            </div>
+                </div>
+             </div>
           </main>
         )}
       </div>
 
-      {/* POPUP FIXED POSITION AND OVERLAP ISSUES */}
+      <canvas ref={confettiRef} className="fixed inset-0 pointer-events-none z-[1999]" />
+
+      {/* POPUP TRÚNG GIẢI NẰM NGANG - ĐÃ CẢI TIẾN */}
       {showPopup && currentWin && (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-6 bg-[#020617]/95 backdrop-blur-xl animate-in fade-in duration-500">
-           <div className="w-full max-w-md bg-white rounded-[60px] overflow-visible shadow-[0_0_150px_rgba(251,191,36,0.4)] animate-scale-up border-[12px] border-yellow-400/20 relative">
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-slate-950/95 backdrop-blur-xl animate-in fade-in duration-300">
+           <div className="w-full max-w-3xl bg-white rounded-[50px] shadow-[0_0_100px_rgba(251,191,36,0.3)] animate-scale-up border-[10px] border-yellow-400/20 relative overflow-hidden flex flex-col md:flex-row">
               
-              {/* Header section with winner photo */}
-              <div className="bg-gradient-to-b from-yellow-300 via-yellow-400 to-yellow-600 p-12 text-center rounded-t-[48px] relative">
-                 {/* Winner Photo fixed outside header */}
-                 <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full border-[8px] border-white overflow-hidden shadow-2xl bg-slate-900 z-50">
+              {/* Bên trái: Thông tin người trúng */}
+              <div className="w-full md:w-[240px] bg-gradient-to-br from-yellow-300 to-yellow-500 p-8 flex flex-col items-center justify-center text-center gap-4 border-b md:border-b-0 md:border-r border-yellow-400/30">
+                 <div className="w-28 h-28 rounded-full border-8 border-white shadow-2xl overflow-hidden bg-slate-900 relative z-10">
                     <img src={currentWin.userPhoto} className="w-full h-full object-cover" alt="Winner" />
                  </div>
-                 
-                 <div className="mt-14">
-                   <span className="text-[10px] font-black uppercase tracking-[0.5em] text-slate-900/40 block mb-2">CHIẾN THẮNG THUỘC VỀ</span>
-                   <h3 className="text-4xl font-black text-slate-900 uppercase italic tracking-tighter drop-shadow-sm truncate px-4">
-                     {currentWin.userName}
-                   </h3>
+                 <div className="space-y-1 relative z-10">
+                    <span className="text-[9px] font-black text-slate-900/40 uppercase tracking-[0.3em]">CHÚC MỪNG</span>
+                    <h3 className="text-3xl font-black text-slate-900 uppercase italic leading-tight px-2">{currentWin.userName}</h3>
                  </div>
+                 <i className="fas fa-crown absolute top-4 right-4 text-slate-900/10 text-6xl transform rotate-12"></i>
               </div>
 
-              <div className="p-10 text-center text-slate-900 relative">
-                 {/* Prize Icon box */}
-                 <div className="w-32 h-32 mx-auto bg-white rounded-[40px] flex items-center justify-center mb-6 shadow-2xl border-4 border-slate-50 relative -mt-24 z-40">
-                    <i className="fas fa-trophy text-5xl text-yellow-500"></i>
+              {/* Bên phải: Quà và Lời chúc (BỐ CỤC NGANG) */}
+              <div className="flex-1 p-10 flex flex-col justify-between gap-6 relative">
+                 <div className="flex items-center gap-8">
+                    <div className="w-24 h-24 shrink-0 bg-slate-50 rounded-3xl flex items-center justify-center shadow-md border border-slate-100 p-4 animate-float">
+                       <img src={prizes.find(p => p.name === currentWin.prizeName)?.image} className="max-w-full max-h-full object-contain" />
+                    </div>
+                    <div className="space-y-1">
+                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">PHẦN QUÀ CỦA BẠN</span>
+                       <h4 className="text-3xl font-black uppercase italic text-slate-950 tracking-tighter leading-none">{currentWin.prizeName}</h4>
+                    </div>
                  </div>
 
-                 <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">PHẦN THƯỞNG:</p>
-                 <h4 className="text-2xl font-black uppercase italic text-slate-950 mb-8 px-4">{currentWin.prizeName}</h4>
-                 
-                 <div className="bg-slate-50 p-8 rounded-[35px] border border-slate-100 mb-10 italic text-[14px] font-bold text-slate-600 leading-relaxed shadow-inner">
-                    "{commentary}"
+                 {/* CÂU CHÚC CHIỀU NGANG - GỌN GÀNG */}
+                 <div className="bg-slate-50/80 p-6 rounded-3xl border border-slate-100 relative overflow-hidden flex items-center gap-5">
+                    <div className="absolute top-0 left-0 w-1.5 h-full bg-yellow-400"></div>
+                    <div className="shrink-0 text-yellow-400 opacity-20"><i className="fas fa-quote-left text-4xl"></i></div>
+                    <p className="text-[16px] font-bold text-slate-700 leading-snug italic line-clamp-3">"{commentary}"</p>
                  </div>
-                 
-                 <button onClick={() => setShowPopup(false)} className="w-full py-6 bg-slate-950 text-white rounded-[30px] font-black text-xs uppercase tracking-[0.2em] hover:bg-slate-800 transition-all shadow-xl">TIẾP TỤC</button>
+
+                 <button onClick={() => setShowPopup(false)} className="w-full py-4 bg-slate-950 text-white rounded-2xl font-black text-[11px] uppercase tracking-[0.4em] hover:bg-yellow-400 hover:text-slate-950 transition-all shadow-xl active:scale-95 transform hover:-translate-y-1">
+                    TIẾP TỤC VÒNG QUAY
+                 </button>
               </div>
            </div>
         </div>
@@ -348,8 +405,10 @@ const App: React.FC = () => {
 
       <style>{`
         @keyframes scale-up { from { transform: scale(0.9) translateY(20px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
-        .animate-scale-up { animation: scale-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+        .animate-scale-up { animation: scale-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+        .animate-float { animation: float 3s ease-in-out infinite; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
       `}</style>
     </div>
