@@ -7,18 +7,15 @@ export const getRaceCommentary = async (
   winnerName: string = "bạn", 
   gender: Gender = 'other'
 ) => {
-  const env = (globalThis as any).process?.env || {};
-  const apiKey = env.API_KEY;
-
-  const pronoun = gender === 'male' ? 'anh' : gender === 'female' ? 'chị' : 'bạn';
-
-  if (!apiKey) {
-    return `Chúc mừng ${pronoun} ${winnerName} đã cực kỳ may mắn nhận được món quà tuyệt vời: ${prizeName}!`;
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
+  let pronoun = 'bạn';
+  if (gender === 'male') pronoun = 'anh';
+  else if (gender === 'female') pronoun = 'chị';
+  else if (gender === 'teacher_male') pronoun = 'thầy';
+  else if (gender === 'teacher_female') pronoun = 'cô';
 
   try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Bạn là MC chuyên nghiệp. 
@@ -26,9 +23,10 @@ export const getRaceCommentary = async (
       
       YÊU CẦU:
       1. Viết 1 câu chúc mừng hào hứng, ngắn gọn (dưới 20 từ).
-      2. Tập trung vào món quà "${prizeName}" và sự may mắn.
-      3. Tuyệt đối KHÔNG nhắc đến: ngựa, đua, chạy, đường đua, phi...
-      4. Ngôn ngữ thân thiện, vui vẻ.`,
+      2. Sử dụng danh xưng "${pronoun}" một cách trang trọng và thân thiện.
+      3. Tập trung vào món quà "${prizeName}" và sự may mắn.
+      4. Tuyệt đối KHÔNG nhắc đến: ngựa, đua, chạy, đường đua, phi...
+      5. Ngôn ngữ thân thiện, vui vẻ.`,
       config: {
         temperature: 0.9,
         maxOutputTokens: 50,
@@ -38,6 +36,7 @@ export const getRaceCommentary = async (
 
     return response.text?.trim() || `Chúc mừng ${pronoun} ${winnerName}! Món quà "${prizeName}" thật tuyệt vời!`;
   } catch (error) {
+    console.error("Gemini API Error:", error);
     return `Chúc mừng ${pronoun} ${winnerName}! Bạn thật sự rất may mắn khi nhận được "${prizeName}"!`;
   }
 };

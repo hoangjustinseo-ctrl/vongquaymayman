@@ -1,6 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { WheelPrize } from '../types';
+import { HORSE_ICON } from '../constants';
 
 interface WheelProps {
   prizes: WheelPrize[];
@@ -34,7 +35,7 @@ const Wheel: React.FC<WheelProps> = ({ prizes, rotation }) => {
       const ctx = canvas.getContext('2d', { alpha: true });
       if (!ctx) return;
 
-      const displaySize = Math.min(container.clientWidth, 600); // Giới hạn kích thước tối đa cho mobile tốt hơn
+      const displaySize = Math.min(container.clientWidth, 600);
       const dpr = window.devicePixelRatio || 1;
       
       canvas.width = displaySize * dpr;
@@ -44,7 +45,7 @@ const Wheel: React.FC<WheelProps> = ({ prizes, rotation }) => {
       ctx.scale(dpr, dpr);
 
       const center = displaySize / 2;
-      const radius = displaySize / 2 - 15; // Giảm lề để vòng quay to hơn trên mobile
+      const radius = displaySize / 2 - 10;
       const numPrizes = prizes.length || 1;
       const sliceAngle = (2 * Math.PI) / numPrizes;
 
@@ -63,29 +64,33 @@ const Wheel: React.FC<WheelProps> = ({ prizes, rotation }) => {
         ctx.fillStyle = p.color;
         ctx.fill();
         
-        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
         ctx.lineWidth = 1;
         ctx.stroke();
 
         ctx.save();
         ctx.rotate(angle + sliceAngle / 2);
         
-        ctx.textAlign = 'right';
-        ctx.fillStyle = 'white';
-        ctx.shadowBlur = 4;
-        ctx.shadowColor = 'rgba(0,0,0,0.5)';
-        
-        // Font size thích ứng với kích thước màn hình
-        const fontSize = Math.max(7, Math.min(14, (displaySize * 0.03)));
-        ctx.font = `900 ${fontSize}px "Inter", sans-serif`;
-        ctx.fillText(p.name.toUpperCase(), radius - (radius * 0.12), fontSize / 3);
-
+        // 1. VẼ HÌNH ẢNH Ở NGOÀI CÙNG (GẦN VIỀN)
         const img = loadedImages[p.image];
         if (img) {
           const imgSize = radius * 0.22;
-          const imgX = radius * 0.45;
-          ctx.drawImage(img, imgX, -imgSize / 2, imgSize, imgSize);
+          const imgX = radius * 0.78; // Đẩy hình ra ngoài
+          ctx.drawImage(img, imgX - (imgSize/2), -imgSize / 2, imgSize, imgSize);
         }
+
+        // 2. VẼ CHỮ Ở PHÍA TRONG (GẦN TÂM HƠN)
+        ctx.textAlign = 'right'; // Căn lề phải để chữ kết thúc trước hình
+        ctx.fillStyle = 'white';
+        ctx.shadowBlur = 4;
+        ctx.shadowColor = 'rgba(0,0,0,0.6)';
+        
+        const fontSize = Math.max(8, Math.min(13, (displaySize * 0.025)));
+        ctx.font = `900 ${fontSize}px "Inter", sans-serif`;
+        
+        // Chữ kết thúc tại 60% bán kính, bắt đầu từ gần tâm
+        const textEndPos = radius * 0.62;
+        ctx.fillText(p.name.toUpperCase(), textEndPos, fontSize / 3);
 
         ctx.restore();
       });
@@ -99,21 +104,21 @@ const Wheel: React.FC<WheelProps> = ({ prizes, rotation }) => {
       ctx.lineWidth = Math.max(4, displaySize * 0.02);
       ctx.stroke();
 
-      // Nút đỏ ở giữa
+      // Nút trung tâm
       ctx.beginPath();
-      ctx.arc(center, center, displaySize * 0.08, 0, Math.PI * 2);
+      ctx.arc(center, center, displaySize * 0.1, 0, Math.PI * 2);
       ctx.fillStyle = 'white';
       ctx.shadowBlur = 20;
       ctx.shadowColor = 'rgba(0,0,0,0.3)';
       ctx.fill();
       
-      // Mũi tên chỉ hướng
+      // Mũi tên chỉ hướng (màu đỏ)
       ctx.fillStyle = '#ef4444';
       ctx.beginPath();
-      const pointerSize = displaySize * 0.05;
+      const pointerSize = displaySize * 0.06;
       ctx.moveTo(center - pointerSize, 0);
       ctx.lineTo(center + pointerSize, 0);
-      ctx.lineTo(center, pointerSize * 2);
+      ctx.lineTo(center, pointerSize * 2.2);
       ctx.closePath();
       ctx.fill();
     };
@@ -125,9 +130,9 @@ const Wheel: React.FC<WheelProps> = ({ prizes, rotation }) => {
 
   return (
     <div ref={containerRef} className="relative w-full h-full flex items-center justify-center">
-      <canvas ref={canvasRef} className="rounded-full" />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none w-10 h-10 md:w-16 md:h-16 bg-white rounded-full flex items-center justify-center shadow-2xl border-2 md:border-4 border-yellow-400">
-         <i className="fas fa-horse text-[#020617] text-xl md:text-3xl animate-bounce"></i>
+      <canvas ref={canvasRef} className="rounded-full shadow-[0_0_80px_rgba(0,0,0,0.5)]" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none w-12 h-12 md:w-16 md:h-16 bg-white rounded-full flex items-center justify-center shadow-2xl border-2 md:border-4 border-yellow-400 overflow-hidden p-2">
+         <img src={HORSE_ICON} className="w-full h-full object-contain animate-pulse" />
       </div>
     </div>
   );

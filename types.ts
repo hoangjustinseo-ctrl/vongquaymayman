@@ -1,6 +1,6 @@
 
 export type SpinStatus = 'idle' | 'spinning' | 'finished';
-export type Gender = 'male' | 'female' | 'other';
+export type Gender = 'male' | 'female' | 'other' | 'teacher_male' | 'teacher_female';
 
 export interface Prize {
   id: string;

@@ -149,6 +149,14 @@ const App: React.FC = () => {
     setCommentary(res);
   };
 
+  const genderOptions: { label: string, value: Gender }[] = [
+    { label: 'ANH', value: 'male' },
+    { label: 'CHỊ', value: 'female' },
+    { label: 'THẦY', value: 'teacher_male' },
+    { label: 'CÔ', value: 'teacher_female' },
+    { label: 'BẠN', value: 'other' }
+  ];
+
   return (
     <div className="relative min-h-screen bg-[#020617] text-white font-sans overflow-x-hidden">
       <div 
@@ -200,13 +208,13 @@ const App: React.FC = () => {
                           placeholder="NHẬP TÊN BẠN"
                           className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 md:px-5 md:py-3.5 text-center font-black focus:outline-none focus:border-yellow-400 uppercase tracking-widest text-[10px] md:text-xs"
                         />
-                        <div className="flex justify-center gap-1 md:gap-2">
-                            {(['male', 'female', 'other'] as Gender[]).map((g) => (
+                        <div className="flex flex-wrap justify-center gap-1 md:gap-2">
+                            {genderOptions.map((opt) => (
                               <button 
-                                key={g} onClick={() => setGender(g)}
-                                className={`px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-[8px] md:text-[9px] font-black uppercase transition-all border ${gender === g ? 'bg-yellow-400 text-slate-950 border-yellow-400' : 'bg-white/5 border-white/10 text-white/30'}`}
+                                key={opt.value} onClick={() => setGender(opt.value)}
+                                className={`px-2.5 py-1.5 md:px-3 md:py-2 rounded-lg text-[8px] md:text-[9px] font-black uppercase transition-all border ${gender === opt.value ? 'bg-yellow-400 text-slate-950 border-yellow-400' : 'bg-white/5 border-white/10 text-white/30'}`}
                               >
-                                {g === 'male' ? 'ANH' : g === 'female' ? 'CHỊ' : 'BẠN'}
+                                {opt.label}
                               </button>
                             ))}
                         </div>
