@@ -1,9 +1,8 @@
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Prize, SpinStatus, WinnerRecord, WheelPrize, Gender } from './types';
-import { INITIAL_PRIZES, HORSE_ICON, DEFAULT_BG_MUSIC, DEFAULT_WIN_SOUND, BG_PRESETS, MUSIC_PLAYLIST, WIN_SOUNDS } from './constants';
+import { Prize, SpinStatus, WinnerRecord, WheelPrize, Gender, Quote } from './types';
+import { INITIAL_PRIZES, INITIAL_QUOTES, HORSE_ICON, DEFAULT_BG_MUSIC, DEFAULT_WIN_SOUND, BG_PRESETS, MUSIC_PLAYLIST, WIN_SOUNDS } from './constants';
 import Wheel from './components/Wheel';
-import { getRaceCommentary } from './services/geminiService';
+// import { getRaceCommentary } from './services/geminiService'; // Tạm tắt Gemini để dùng lời chúc cố định
 import { soundService } from './services/soundService';
 
 const App: React.FC = () => {
@@ -14,24 +13,30 @@ const App: React.FC = () => {
   const [gender, setGender] = useState<Gender>('male');
   const [userPhoto, setUserPhoto] = useState<string>(HORSE_ICON);
   const [prizeZoom, setPrizeZoom] = useState<number>(1);
+  const [editingQuoteCategory, setEditingQuoteCategory] = useState<string | null>(null);
   
+  // States for Data
   const [prizes, setPrizes] = useState<Prize[]>(() => {
     try {
-      const params = new URLSearchParams(window.location.search);
-      const data = params.get('data');
-      if (data) {
-        const decoded = JSON.parse(atob(data));
-        if (Array.isArray(decoded) && decoded.length > 0) return decoded;
-      }
-    } catch (e) {}
+      const saved = localStorage.getItem('vongquay_prizes');
+      if (saved) return JSON.parse(saved);
+    } catch(e) {}
     return INITIAL_PRIZES;
+  });
+
+  const [quotes, setQuotes] = useState<Quote[]>(() => {
+    try {
+      const saved = localStorage.getItem('vongquay_quotes');
+      if (saved) return JSON.parse(saved);
+    } catch(e) {}
+    return INITIAL_QUOTES;
   });
 
   const [winners, setWinners] = useState<WinnerRecord[]>([]);
   const [showPopup, setShowPopup] = useState(false);
   const [currentWin, setCurrentWin] = useState<WinnerRecord | null>(null);
-  const [commentary, setCommentary] = useState('');
   
+  // Settings States
   const [bgMusicUrl, setBgMusicUrl] = useState(DEFAULT_BG_MUSIC);
   const [winSoundUrl, setWinSoundUrl] = useState(DEFAULT_WIN_SOUND);
   const [masterVol, setMasterVol] = useState(70);
@@ -41,19 +46,20 @@ const App: React.FC = () => {
   const rotationRef = useRef(0);
   const lastTickAngle = useRef(0);
 
+  // Persistence
   useEffect(() => {
-    try {
-      const data = btoa(JSON.stringify(prizes));
-      const url = new URL(window.location.href);
-      url.searchParams.set('data', data);
-      window.history.replaceState(null, '', url.toString());
-    } catch (e) {}
+    localStorage.setItem('vongquay_prizes', JSON.stringify(prizes));
   }, [prizes]);
+
+  useEffect(() => {
+    localStorage.setItem('vongquay_quotes', JSON.stringify(quotes));
+  }, [quotes]);
 
   useEffect(() => {
     soundService.setVolumes(masterVol / 100, musicVol / 100);
   }, [masterVol, musicVol]);
 
+  // Derived Data
   const availablePrizes = useMemo(() => prizes.filter(p => p.count > 0), [prizes]);
   const wheelPrizes: WheelPrize[] = useMemo(() => 
     availablePrizes.map(p => ({ name: p.name, color: p.color, image: p.image })),
@@ -127,10 +133,20 @@ const App: React.FC = () => {
     const winIndex = Math.floor(pointerAngle / (360 / (availablePrizes.length || 1)));
     const winPrize = availablePrizes[winIndex];
 
+    // Lấy lời chúc ngẫu nhiên tương ứng với giải thưởng
+    const relevantQuotes = quotes.filter(q => q.category === winPrize.name);
+    let finalQuote = `Chúc mừng ${userName}! Bạn đã đạt mốc ${winPrize.name}!`;
+    
+    if (relevantQuotes.length > 0) {
+      const randomIndex = Math.floor(Math.random() * relevantQuotes.length);
+      finalQuote = relevantQuotes[randomIndex].content;
+    }
+
     const winRecord: WinnerRecord = { 
       userName, gender, userPhoto,
       prizeName: winPrize.name, 
-      time: new Date().toLocaleTimeString() 
+      time: new Date().toLocaleTimeString(),
+      quote: finalQuote
     };
 
     setCurrentWin(winRecord);
@@ -138,15 +154,8 @@ const App: React.FC = () => {
     setTimeout(() => {
       setShowPopup(true);
     }, 400);
-    handleAICommentary(userName, winPrize.name, gender);
 
-    setPrizes(prev => prev.map(p => p.id === winPrize.id ? { ...p, count: p.count - 1 } : p));
-  };
-
-  const handleAICommentary = async (user: string, prize: string, g: Gender) => {
-    setCommentary('Đang nhận lời chúc may mắn...');
-    const res = await getRaceCommentary(prize, user, g);
-    setCommentary(res);
+    // setPrizes(prev => prev.map(p => p.id === winPrize.id ? { ...p, count: p.count - 1 } : p)); // Không trừ count vì đây là mốc doanh số
   };
 
   const genderOptions: { label: string, value: Gender }[] = [
@@ -156,6 +165,26 @@ const App: React.FC = () => {
     { label: 'CÔ', value: 'teacher_female' },
     { label: 'BẠN', value: 'other' }
   ];
+
+  // Logic quản lý lời chúc
+  const updateQuote = (id: string, newContent: string) => {
+    setQuotes(prev => prev.map(q => q.id === id ? { ...q, content: newContent } : q));
+  };
+
+  const deleteQuote = (id: string) => {
+    if (confirm('Bạn có chắc muốn xóa lời chúc này?')) {
+      setQuotes(prev => prev.filter(q => q.id !== id));
+    }
+  };
+
+  const addQuote = (category: string) => {
+    const newQuote: Quote = {
+      id: Math.random().toString(36).substr(2, 9),
+      category,
+      content: 'Nhập nội dung lời chúc mới...'
+    };
+    setQuotes(prev => [newQuote, ...prev]);
+  };
 
   return (
     <div className="relative min-h-screen bg-[#020617] text-white font-sans overflow-x-hidden">
@@ -171,7 +200,7 @@ const App: React.FC = () => {
             <div className="w-8 h-8 md:w-10 md:h-10 bg-yellow-400 rounded-lg flex items-center justify-center shadow-lg">
               <i className="fas fa-gift text-lg md:text-xl text-slate-900"></i>
             </div>
-            <h1 className="text-sm md:text-xl font-black uppercase italic tracking-tighter text-white">VÒNG QUAY <span className="text-yellow-400">MAY MẮN</span></h1>
+            <h1 className="text-sm md:text-xl font-black uppercase italic tracking-tighter text-white">CUỘC ĐUA <span className="text-yellow-400">DOANH SỐ</span></h1>
           </div>
           <div className="flex gap-1 md:gap-2">
             <button onClick={() => setActiveTab('game')} className={`px-3 py-1.5 md:px-5 md:py-2 rounded-lg font-bold text-[9px] md:text-[10px] uppercase tracking-widest transition-all ${activeTab === 'game' ? 'bg-white text-slate-950' : 'bg-white/5 hover:bg-white/10'}`}>CHƠI</button>
@@ -232,7 +261,7 @@ const App: React.FC = () => {
                 <div className="bg-slate-900/80 border border-white/10 rounded-[30px] md:rounded-[40px] p-5 md:p-8 flex flex-col backdrop-blur-3xl h-[250px] md:h-[320px] shadow-2xl relative overflow-hidden">
                   <div className="flex justify-between items-center mb-4 md:mb-6">
                     <h2 className="text-[8px] md:text-[9px] font-black text-yellow-400 uppercase tracking-[0.3em] flex items-center gap-2">
-                      <i className="fas fa-boxes"></i> KHO GIẢI THƯỞNG
+                      <i className="fas fa-boxes"></i> MỐC DOANH SỐ
                     </h2>
                     <div className="flex items-center gap-1 md:gap-2 bg-white/5 rounded-lg px-2 py-1">
                        <button onClick={() => setPrizeZoom(1)} className={`w-5 h-5 md:w-6 md:h-6 rounded flex items-center justify-center text-[8px] md:text-[9px] ${prizeZoom === 1 ? 'bg-yellow-400 text-slate-900' : 'hover:bg-white/10'}`}><i className="fas fa-minus"></i></button>
@@ -245,7 +274,7 @@ const App: React.FC = () => {
                           <img src={p.image} className="object-contain shrink-0" style={{ width: prizeZoom === 1.5 ? '36px' : '28px', height: prizeZoom === 1.5 ? '36px' : '28px' }} />
                           <div className="flex-1 min-w-0">
                               <p className={`font-black uppercase truncate ${prizeZoom === 1.5 ? 'text-xs md:text-sm' : 'text-[10px] md:text-[11px]'}`}>{p.name}</p>
-                              <p className={`font-bold text-yellow-400/60 uppercase ${prizeZoom === 1.5 ? 'text-[9px]' : 'text-[7px] md:text-[8px]'}`}>CÒN: {p.count}</p>
+                              {/* Ẩn số lượng vì mốc doanh số không có giới hạn */}
                           </div>
                           <div className="w-2 md:w-2.5 h-2 md:h-2.5 rounded-full" style={{ backgroundColor: p.color }}></div>
                         </div>
@@ -256,7 +285,9 @@ const App: React.FC = () => {
             </div>
           </main>
         ) : (
-          <main className="flex-1 p-4 md:p-8 max-w-6xl mx-auto w-full grid lg:grid-cols-2 gap-4 md:gap-8">
+          <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full grid lg:grid-cols-3 gap-4 md:gap-8">
+             
+             {/* CỘT 1: HÌNH NỀN & ÂM THANH */}
              <div className="space-y-4 md:space-y-8">
                 <div className="bg-slate-900/80 p-5 md:p-8 rounded-[30px] md:rounded-[40px] border border-white/10 space-y-4 md:space-y-6 backdrop-blur-3xl">
                   <div className="flex justify-between items-center">
@@ -295,10 +326,11 @@ const App: React.FC = () => {
                 </div>
              </div>
 
+             {/* CỘT 2: CẤU HÌNH CÁC MỐC GIẢI THƯỞNG */}
              <div className="bg-slate-900/80 p-5 md:p-8 rounded-[30px] md:rounded-[40px] border border-white/10 backdrop-blur-3xl flex flex-col h-full max-h-[600px] md:max-h-[700px]">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-[9px] md:text-[10px] font-black text-yellow-400 uppercase tracking-widest">GIẢI THƯỞNG</h2>
-                  <button onClick={() => setPrizes([...prizes, { id: Math.random().toString(36).substr(2, 9), name: 'QUÀ MỚI', count: 1, color: '#facc15', image: HORSE_ICON }])} className="px-3 py-1.5 md:px-4 md:py-2 bg-white text-slate-950 rounded-lg text-[8px] md:text-[9px] font-black uppercase transition-transform hover:scale-105">+ THÊM</button>
+                  <h2 className="text-[9px] md:text-[10px] font-black text-yellow-400 uppercase tracking-widest">MỐC DOANH SỐ</h2>
+                  <button onClick={() => setPrizes([...prizes, { id: Math.random().toString(36).substr(2, 9), name: 'MỐC MỚI', count: 1, color: '#facc15', image: HORSE_ICON }])} className="px-3 py-1.5 md:px-4 md:py-2 bg-white text-slate-950 rounded-lg text-[8px] md:text-[9px] font-black uppercase transition-transform hover:scale-105">+ THÊM</button>
                 </div>
                 <div className="flex-1 overflow-y-auto space-y-2 md:space-y-3 custom-scrollbar pr-1">
                   {prizes.map((p) => (
@@ -307,13 +339,65 @@ const App: React.FC = () => {
                           <img src={p.image} className="max-w-full max-h-full object-contain" />
                           <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload((url) => setPrizes(prev => prev.map(item => item.id === p.id ? {...item, image: url} : item)), e)} />
                        </label>
-                       <input type="text" value={p.name} onChange={(e) => setPrizes(prev => prev.map(item => item.id === p.id ? {...item, name: e.target.value} : item))} className="flex-1 bg-transparent border-none text-[10px] md:text-xs font-bold uppercase outline-none focus:text-yellow-400 min-w-0" />
-                       <input type="number" value={p.count} onChange={(e) => setPrizes(prev => prev.map(item => item.id === p.id ? {...item, count: parseInt(e.target.value) || 0} : item))} className="w-8 md:w-10 bg-white/10 text-center font-bold py-1 md:py-1.5 rounded-lg text-[9px] md:text-[10px]" />
+                       <div className="flex-1 min-w-0">
+                         <input type="text" value={p.name} onChange={(e) => setPrizes(prev => prev.map(item => item.id === p.id ? {...item, name: e.target.value} : item))} className="w-full bg-transparent border-none text-[10px] md:text-xs font-bold uppercase outline-none focus:text-yellow-400 min-w-0" />
+                       </div>
                        <input type="color" value={p.color} onChange={(e) => setPrizes(prev => prev.map(item => item.id === p.id ? {...item, color: e.target.value} : item))} className="w-5 h-5 md:w-6 md:h-6 rounded-full border-none cursor-pointer p-0" />
                        <button onClick={() => setPrizes(prizes.filter(pr => pr.id !== p.id))} className="text-red-500/20 group-hover:text-red-500 transition-colors shrink-0"><i className="fas fa-trash"></i></button>
                     </div>
                   ))}
                 </div>
+             </div>
+
+             {/* CỘT 3: CẤU HÌNH LỜI CHÚC */}
+             <div className="bg-slate-900/80 p-5 md:p-8 rounded-[30px] md:rounded-[40px] border border-white/10 backdrop-blur-3xl flex flex-col h-full max-h-[600px] md:max-h-[700px]">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-[9px] md:text-[10px] font-black text-yellow-400 uppercase tracking-widest">CẤU HÌNH LỜI CHÚC</h2>
+                </div>
+                
+                <div className="mb-4">
+                  <label className="text-[8px] md:text-[9px] font-bold text-white/50 block mb-2 uppercase">CHỌN MỐC DOANH SỐ ĐỂ SỬA LỜI CHÚC:</label>
+                  <select 
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-[10px] md:text-xs outline-none"
+                    value={editingQuoteCategory || ''}
+                    onChange={(e) => setEditingQuoteCategory(e.target.value)}
+                  >
+                    <option value="" className="bg-slate-900">-- Chọn mốc --</option>
+                    {prizes.map(p => (
+                      <option key={p.id} value={p.name} className="bg-slate-900">{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {editingQuoteCategory && (
+                   <>
+                     <div className="flex justify-between items-center mb-2">
+                       <span className="text-[8px] md:text-[9px] font-bold text-white/50">DANH SÁCH CÂU CHÚC ({quotes.filter(q => q.category === editingQuoteCategory).length})</span>
+                       <button onClick={() => addQuote(editingQuoteCategory)} className="text-[8px] md:text-[9px] font-bold text-yellow-400 hover:text-white transition-colors uppercase">+ THÊM CÂU</button>
+                     </div>
+                     <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-1">
+                        {quotes.filter(q => q.category === editingQuoteCategory).map((q) => (
+                          <div key={q.id} className="bg-white/5 p-3 rounded-xl border border-white/5 flex gap-2 group">
+                             <textarea 
+                                value={q.content} 
+                                onChange={(e) => updateQuote(q.id, e.target.value)}
+                                className="flex-1 bg-transparent border-none text-[10px] md:text-xs resize-none outline-none min-h-[50px]"
+                             />
+                             <button onClick={() => deleteQuote(q.id)} className="text-red-500/30 group-hover:text-red-500 self-start"><i className="fas fa-trash"></i></button>
+                          </div>
+                        ))}
+                        {quotes.filter(q => q.category === editingQuoteCategory).length === 0 && (
+                          <p className="text-center text-white/20 text-xs italic py-4">Chưa có lời chúc nào cho mốc này.</p>
+                        )}
+                     </div>
+                   </>
+                )}
+                
+                {!editingQuoteCategory && (
+                  <div className="flex-1 flex items-center justify-center text-white/20 text-xs italic">
+                    Vui lòng chọn một mốc doanh số ở trên để xem và chỉnh sửa các câu chúc.
+                  </div>
+                )}
              </div>
           </main>
         )}
@@ -340,7 +424,7 @@ const App: React.FC = () => {
                        <img src={prizes.find(p => p.name === currentWin.prizeName)?.image} className="max-w-full max-h-full object-contain" />
                     </div>
                     <div className="space-y-0 md:space-y-1 min-w-0">
-                       <span className="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest block truncate">BẠN ĐÃ TRÚNG</span>
+                       <span className="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest block truncate">BẠN ĐÃ ĐẠT MỐC</span>
                        <h4 className="text-lg md:text-3xl font-black uppercase italic text-slate-950 tracking-tighter leading-tight truncate">{currentWin.prizeName}</h4>
                     </div>
                  </div>
@@ -348,7 +432,9 @@ const App: React.FC = () => {
                  <div className="bg-slate-50/80 p-4 md:p-6 rounded-2xl md:rounded-3xl border border-slate-100 relative overflow-hidden flex items-center gap-3 md:gap-5">
                     <div className="absolute top-0 left-0 w-1 md:w-1.5 h-full bg-yellow-400"></div>
                     <div className="shrink-0 text-yellow-400 opacity-20"><i className="fas fa-quote-left text-2xl md:text-4xl"></i></div>
-                    <p className="text-[13px] md:text-[16px] font-bold text-slate-700 leading-snug italic line-clamp-3">"{commentary}"</p>
+                    <p className="text-[13px] md:text-[16px] font-bold text-slate-700 leading-snug italic line-clamp-3">
+                      "{currentWin.quote}"
+                    </p>
                  </div>
 
                  <button onClick={() => setShowPopup(false)} className="w-full py-3.5 md:py-4 bg-slate-950 text-white rounded-xl md:rounded-2xl font-black text-[9px] md:text-[11px] uppercase tracking-[0.4em] hover:bg-yellow-400 hover:text-slate-950 transition-all shadow-xl active:scale-95 transform">

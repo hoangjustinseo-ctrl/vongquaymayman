@@ -22,11 +22,11 @@ export interface WinnerRecord {
   userPhoto: string;
   prizeName: string;
   time: string;
+  quote: string; // Thêm trường lưu lời chúc lúc thắng
 }
 
-export interface Horse {
+export interface Quote {
   id: string;
-  name: string;
-  progress: number;
-  image: string;
+  category: string; // Tên giải thưởng tương ứng (VD: "500 TRIỆU")
+  content: string;
 }
